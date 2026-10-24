@@ -60,6 +60,8 @@ class IdempotencyConcurrencyTest extends AbstractIntegrationTest {
             assertThat(r.httpStatus()).isEqualTo(201);
         });
         assertThat(results.stream().filter(r -> !r.replayed()).count()).isEqualTo(1);
+        // the losers rolled back completely: their outbox events disappeared with them
+        assertThat(count("SELECT COUNT(*) FROM outbox WHERE aggregate_id = ?", txId)).isEqualTo(1);
     }
 
     @Test

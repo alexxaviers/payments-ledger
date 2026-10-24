@@ -24,5 +24,6 @@
 
     <modules>
         <module>ledger-service</module>
+        <module>notifications-service</module>
     </modules>
 </project>

@@ -3,6 +3,7 @@ package com.alexxavier.ledger.transfer;
 import com.alexxavier.ledger.account.AccountBalance;
 import com.alexxavier.ledger.account.AccountBalanceRepository;
 import com.alexxavier.ledger.account.AccountNotFoundException;
+import com.alexxavier.ledger.outbox.OutboxWriter;
 import com.alexxavier.ledger.transfer.IdempotencyStore.StoredResponse;
 import com.alexxavier.ledger.transfer.LedgerTransaction.Status;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -28,10 +29,13 @@ class TransferExecutor {
     private final AccountBalanceRepository balances;
     private final LedgerTransactionRepository transactions;
     private final LedgerEntryRepository entries;
+    private final OutboxWriter outbox;
     private final ObjectMapper json;
 
     TransferExecutor(IdempotencyStore idempotency, AccountBalanceRepository balances,
-                     LedgerTransactionRepository transactions, LedgerEntryRepository entries, ObjectMapper json) {
+                     LedgerTransactionRepository transactions, LedgerEntryRepository entries,
+                     OutboxWriter outbox, ObjectMapper json) {
+        this.outbox = outbox;
         this.idempotency = idempotency;
         this.balances = balances;
         this.transactions = transactions;
@@ -74,6 +78,8 @@ class TransferExecutor {
             entries.save(new LedgerEntry(tx.getId(), req.toAccountId(), amount));
             from.debit(amount);
             to.credit(amount);
+            // The event is written to the outbox in this same transaction: transfer and event are atomic.
+            outbox.transferCompleted(tx.getId(), req.fromAccountId(), req.toAccountId(), amount);
             response = new TransferResponse(tx.getId(), Status.COMPLETED, req.fromAccountId(), req.toAccountId(),
                     amount, null);
             httpStatus = HTTP_CREATED;

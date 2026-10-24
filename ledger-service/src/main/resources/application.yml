@@ -13,6 +13,30 @@ spring:
       ddl-auto: validate
   flyway:
     enabled: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        enable.idempotence: true
+        max.block.ms: 10000
+        request.timeout.ms: 10000
+        delivery.timeout.ms: 15000
+  task:
+    scheduling:
+      pool:
+        size: 2
+
+ledger:
+  outbox:
+    topic: ledger.transfers
+    partitions: 3
+    publisher:
+      enabled: true
+      interval: 200ms
+      batch-size: 100
 
 management:
   endpoints:
