@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: payments-ledger
+    folder: Payments Ledger
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards

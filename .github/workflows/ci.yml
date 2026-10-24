@@ -27,6 +27,17 @@ jobs:
           grep -h -A 15 -E "FAILURE|ERROR" "${files[@]}" > test-failures.txt || true
           .github/scripts/annotate.sh error "Test failures" test-failures.txt
 
+  config-check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Validate Prometheus config and alert rules
+        run: |
+          docker run --rm -v "$PWD/observability/prometheus:/etc/prometheus:ro" \
+            --entrypoint promtool prom/prometheus:v3.5.0 check config /etc/prometheus/prometheus.yml
+      - name: Validate Grafana dashboard JSON
+        run: python3 -m json.tool observability/grafana/dashboards/ledger.json > /dev/null
+
   load-test:
     needs: test
     runs-on: ubuntu-24.04

@@ -2,6 +2,7 @@ package com.alexxavier.ledger.transfer;
 
 import com.alexxavier.ledger.common.BadRequestException;
 import com.alexxavier.ledger.common.SystemAccounts;
+import com.alexxavier.ledger.metrics.LedgerMetrics;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
@@ -17,9 +18,11 @@ public class TransferService {
     static final int MAX_KEY_LENGTH = 255;
 
     private final TransferExecutor executor;
+    private final LedgerMetrics metrics;
 
-    public TransferService(TransferExecutor executor) {
+    public TransferService(TransferExecutor executor, LedgerMetrics metrics) {
         this.executor = executor;
+        this.metrics = metrics;
     }
 
     /** A customer transfer. Neither side may be a system account; the source may not overdraw. */
@@ -46,6 +49,14 @@ public class TransferService {
     }
 
     private TransferResult run(String key, String hash, TransferRequest request, boolean sourceMayGoNegative) {
+        var sample = metrics.start();
+        TransferResult result = execute(key, hash, request, sourceMayGoNegative);
+        metrics.recordTransfer(sample, result.replayed(),
+                result.body().status() == LedgerTransaction.Status.COMPLETED);
+        return result;
+    }
+
+    private TransferResult execute(String key, String hash, TransferRequest request, boolean sourceMayGoNegative) {
         try {
             return executor.execute(key, hash, request, sourceMayGoNegative);
         } catch (DataIntegrityViolationException | TransferExecutor.LostIdempotencyRaceException e) {

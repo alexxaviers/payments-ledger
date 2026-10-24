@@ -1,5 +1,6 @@
 package com.alexxavier.ledger.outbox;
 
+import com.alexxavier.ledger.metrics.LedgerMetrics;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,13 +41,16 @@ public class OutboxPublisher {
     private final String topic;
     private final int batchSize;
     private final TransactionTemplate tx;
+    private final LedgerMetrics metrics;
 
     public OutboxPublisher(JdbcTemplate jdbc, KafkaTemplate<String, String> kafka, TransactionTemplate tx,
+                           LedgerMetrics metrics,
                            @Value("${ledger.outbox.topic}") String topic,
                            @Value("${ledger.outbox.publisher.batch-size:100}") int batchSize) {
         this.jdbc = jdbc;
         this.kafka = kafka;
         this.tx = tx;
+        this.metrics = metrics;
         this.topic = topic;
         this.batchSize = batchSize;
     }
@@ -76,7 +80,11 @@ public class OutboxPublisher {
                 throw new IllegalStateException("outbox batch failed", e);
             }
         });
-        return published == null ? 0 : published;
+        int count = published == null ? 0 : published;
+        if (count > 0) {
+            metrics.recordPublished(count);
+        }
+        return count;
     }
 
     private int claimSendAndMark() throws Exception {
