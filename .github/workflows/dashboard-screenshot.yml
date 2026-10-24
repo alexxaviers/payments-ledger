@@ -1,0 +1,91 @@
+name: Dashboard screenshot
+
+# Runs the docker-compose stack (Postgres, Kafka, Prometheus, Grafana) plus both services, drives traffic
+# with k6, and screenshots the Grafana dashboard and the Prometheus alerts page.
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Also push the PNGs to the assets/screenshots branch
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  screenshot:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - uses: grafana/setup-k6-action@v1
+      - name: Start infrastructure
+        run: docker compose up -d --wait postgres kafka prometheus grafana
+      - name: Start services
+        run: |
+          ./mvnw -B -q -DskipTests package
+          nohup java -jar ledger-service/target/ledger-service-*.jar > ledger.log 2>&1 &
+          nohup java -jar notifications-service/target/notifications-service-*.jar > notifications.log 2>&1 &
+          for port in 8080 8081; do
+            for i in $(seq 1 60); do curl -fs localhost:$port/actuator/health && break; sleep 2; done
+          done
+      - name: Traffic (3 minutes, 10% retries, low balances so some transfers are rejected)
+        run: |
+          mkdir -p k6-results
+          VUS=30 DURATION=120s ACCOUNTS=20 OPENING_BALANCE=50000 REPLAY_RATIO=0.1 k6 run --quiet load-test/transfers.js
+      - name: Screenshot
+        run: |
+          mkdir -p shots && cd shots
+          npm init -y >/dev/null && npm install --silent playwright@1.56.1
+          npx playwright install --with-deps chromium chromium-headless-shell >/dev/null
+          cat > shot.js <<'JS'
+          const { chromium } = require('playwright');
+          const fs = require('fs');
+          (async () => {
+            const log = [];
+            const browser = await chromium.launch({ channel: 'chromium' });
+            const page = await browser.newPage({ viewport: { width: 1600, height: 1240 } });
+            page.on('console', m => { if (m.type() === 'error') log.push('console: ' + m.text()); });
+            page.on('pageerror', e => log.push('pageerror: ' + e.message));
+            page.on('requestfailed', r => log.push('requestfailed: ' + r.url() + ' ' + (r.failure() || {}).errorText));
+            page.on('response', r => { if (r.status() >= 400) log.push('http ' + r.status() + ' ' + r.url()); });
+            await page.goto('http://127.0.0.1:3000/d/payments-ledger/payments-ledger?orgId=1&from=now-5m&to=now&kiosk',
+                            { waitUntil: 'networkidle', timeout: 60000 });
+            await page.waitForSelector('.react-grid-layout', { timeout: 60000 }).catch(e => log.push('grafana: ' + e.message));
+            await page.waitForTimeout(8000);
+            log.push('grafana title=' + await page.title() + ' boot=' + await page.evaluate(() => typeof window.grafanaBootData)
+                     + ' panels=' + await page.evaluate(() => document.querySelectorAll('[data-viz-panel-key], .react-grid-item').length)
+                     + ' ua=' + await page.evaluate(() => navigator.userAgent));
+            await page.screenshot({ path: 'grafana-dashboard.png' });
+            await page.goto('http://127.0.0.1:9090/alerts', { waitUntil: 'load', timeout: 60000 });
+            await page.waitForTimeout(6000);
+            log.push('prometheus title=' + await page.title() + ' textlen=' + await page.evaluate(() => document.body.innerText.length));
+            await page.setViewportSize({ width: 1600, height: 800 });
+            await page.screenshot({ path: 'prometheus-alerts.png' });
+            fs.writeFileSync('browser.log', log.slice(0, 40).join('\n'));
+            await browser.close();
+          })();
+          JS
+          node shot.js > node.log 2>&1 || { tail -c 3000 node.log >> browser.log; ../.github/scripts/annotate.sh error "Browser log" browser.log; exit 1; }
+          ../.github/scripts/annotate.sh notice "Browser log" browser.log
+      - uses: actions/upload-artifact@v5
+        with:
+          name: dashboard-screenshots
+          path: shots/*.png
+          if-no-files-found: warn
+      - name: Publish to assets/screenshots branch
+        if: inputs.publish
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan assets/screenshots
+          git rm -rfq .
+          cp shots/*.png .
+          git add *.png
+          git commit -qm "Dashboard screenshots from run ${{ github.run_id }}"
+          git push -f origin assets/screenshots

@@ -15,7 +15,8 @@ import { textSummary } from 'https://jslib.k6.io/k6-summary/0.1.0/index.js';
 
 const BASE = __ENV.BASE_URL || 'http://localhost:8080';
 const ACCOUNTS = parseInt(__ENV.ACCOUNTS || '50', 10);
-const OPENING_BALANCE = 1_000_000; // $10,000.00 in cents
+const OPENING_BALANCE = parseInt(__ENV.OPENING_BALANCE || '1000000', 10); // $10,000.00 in cents
+const REPLAY_RATIO = parseFloat(__ENV.REPLAY_RATIO || '0');                // share of transfers re-sent with the same key
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 export const options = {
@@ -32,6 +33,7 @@ export const options = {
 
 const completed = new Counter('transfers_completed');
 const rejected = new Counter('transfers_rejected');
+const replays = new Counter('transfers_replayed');
 
 http.setResponseCallback(http.expectedStatuses(200, 201, 422));
 
@@ -61,13 +63,22 @@ export default function (data) {
   while (to === from) to = pick(data.ids);
   const amountCents = 100 + Math.floor(Math.random() * 9_900); // $1.00 .. $99.99
 
-  const res = http.post(`${BASE}/transfers`, JSON.stringify({ fromAccountId: from, toAccountId: to, amountCents }), {
-    headers: Object.assign({ 'Idempotency-Key': uuidv4() }, JSON_HEADERS),
-    tags: { name: 'transfer' },
-  });
+  const body = JSON.stringify({ fromAccountId: from, toAccountId: to, amountCents });
+  const params = { headers: Object.assign({ 'Idempotency-Key': uuidv4() }, JSON_HEADERS), tags: { name: 'transfer' } };
+  const res = http.post(`${BASE}/transfers`, body, params);
   check(res, { 'transfer completed or rejected': (r) => r.status === 201 || r.status === 422 });
   if (res.status === 201) completed.add(1);
   else if (res.status === 422) rejected.add(1);
+
+  if (REPLAY_RATIO > 0 && Math.random() < REPLAY_RATIO) {
+    const again = http.post(`${BASE}/transfers`, body, Object.assign({}, params, { tags: { name: 'replay' } }));
+    check(again, {
+      'replay returns the original answer': (r) => r.status === res.status
+        && r.headers['Idempotent-Replayed'] === 'true'
+        && r.json('transactionId') === res.json('transactionId'),
+    });
+    replays.add(1);
+  }
 }
 
 export function teardown(data) {

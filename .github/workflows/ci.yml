@@ -99,7 +99,7 @@ jobs:
           .github/scripts/annotate.sh notice "Reconciliation after load" k6-results/reconciliation.json
           tail -n 40 ledger.log > k6-results/ledger-tail.log
           if [ "${{ job.status }}" != "success" ]; then .github/scripts/annotate.sh error "ledger.log tail" k6-results/ledger-tail.log; fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: always()
         with:
           name: load-test-results
