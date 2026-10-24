@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -36,7 +37,10 @@ public class AccountController {
     }
 
     @PostMapping("/{id}/deposit")
-    public AccountResponse deposit(@PathVariable UUID id, @Valid @RequestBody DepositRequest request) {
-        return service.deposit(id, request.amountCents());
+    public AccountResponse deposit(@PathVariable UUID id,
+                                   @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+                                   @Valid @RequestBody DepositRequest request) {
+        String key = idempotencyKey != null ? idempotencyKey : UUID.randomUUID().toString();
+        return service.deposit(key, id, request.amountCents());
     }
 }

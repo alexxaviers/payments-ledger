@@ -1,6 +1,7 @@
 package com.alexxavier.ledger.common;
 
 import com.alexxavier.ledger.account.AccountNotFoundException;
+import com.alexxavier.ledger.transfer.IdempotencyConflictException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -18,6 +19,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler(AccountNotFoundException.class)
     ResponseEntity<ApiError> notFound(AccountNotFoundException e) {
         return error(HttpStatus.NOT_FOUND, "ACCOUNT_NOT_FOUND", e.getMessage());
+    }
+
+    @ExceptionHandler(IdempotencyConflictException.class)
+    ResponseEntity<ApiError> idempotencyConflict(IdempotencyConflictException e) {
+        return error(HttpStatus.UNPROCESSABLE_ENTITY, "IDEMPOTENCY_KEY_REUSED", e.getMessage());
     }
 
     @ExceptionHandler(BadRequestException.class)

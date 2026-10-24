@@ -2,11 +2,7 @@ package com.alexxavier.ledger.account;
 
 import com.alexxavier.ledger.account.AccountDtos.AccountResponse;
 import com.alexxavier.ledger.account.AccountDtos.CreateAccountRequest;
-import com.alexxavier.ledger.common.SystemAccounts;
-import com.alexxavier.ledger.transfer.LedgerEntry;
-import com.alexxavier.ledger.transfer.LedgerEntryRepository;
-import com.alexxavier.ledger.transfer.LedgerTransaction;
-import com.alexxavier.ledger.transfer.LedgerTransactionRepository;
+import com.alexxavier.ledger.transfer.TransferService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,15 +13,13 @@ public class AccountService {
 
     private final AccountRepository accounts;
     private final AccountBalanceRepository balances;
-    private final LedgerTransactionRepository transactions;
-    private final LedgerEntryRepository entries;
+    private final TransferService transferService;
 
     public AccountService(AccountRepository accounts, AccountBalanceRepository balances,
-                          LedgerTransactionRepository transactions, LedgerEntryRepository entries) {
+                          TransferService transferService) {
         this.accounts = accounts;
         this.balances = balances;
-        this.transactions = transactions;
-        this.entries = entries;
+        this.transferService = transferService;
     }
 
     @Transactional
@@ -45,22 +39,11 @@ public class AccountService {
 
     /**
      * Test-only top-up, modelled as a transfer from the EXTERNAL system account so the books balance:
-     * the customer gets +amount, EXTERNAL gets -amount.
+     * the customer gets +amount, EXTERNAL gets -amount. Goes through the same locking and idempotency
+     * path as a normal transfer.
      */
-    @Transactional
-    public AccountResponse deposit(UUID accountId, long amountCents) {
-        // every deposit locks EXTERNAL first, then the target: one fixed order, so no deadlocks
-        AccountBalance external = balances.lockById(SystemAccounts.EXTERNAL).orElseThrow();
-        AccountBalance target = balances.lockById(accountId)
-                .orElseThrow(() -> new AccountNotFoundException(accountId));
-
-        LedgerTransaction tx = transactions.save(new LedgerTransaction(
-                UUID.randomUUID(), "deposit:" + UUID.randomUUID(), LedgerTransaction.Status.COMPLETED));
-        entries.save(new LedgerEntry(tx.getId(), SystemAccounts.EXTERNAL, -amountCents));
-        entries.save(new LedgerEntry(tx.getId(), accountId, amountCents));
-        external.debit(amountCents);
-        target.credit(amountCents);
-
+    public AccountResponse deposit(String idempotencyKey, UUID accountId, long amountCents) {
+        transferService.deposit(idempotencyKey, accountId, amountCents);
         return get(accountId);
     }
 }
