@@ -65,6 +65,15 @@ jobs:
           k6 run load-test/transfers.js
       - name: Verify invariants after load
         run: curl -fsS localhost:8080/admin/invariants | tee k6-results/invariants.json
+      - name: Reconcile after load (outbox must drain to Kafka)
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS -XPOST localhost:8080/admin/reconcile -o k6-results/reconciliation.json; then
+              cat k6-results/reconciliation.json; exit 0
+            fi
+            sleep 2
+          done
+          cat k6-results/reconciliation.json; exit 1
       - name: Write results to job summary
         if: always()
         run: |
@@ -72,6 +81,7 @@ jobs:
           python3 load-test/summarize.py k6-results/summary.json k6-results/invariants.json > k6-results/table.md || true
           cat k6-results/table.md >> "$GITHUB_STEP_SUMMARY"
           .github/scripts/annotate.sh notice "Load test results ($(nproc) vCPU)" k6-results/table.md
+          .github/scripts/annotate.sh notice "Reconciliation after load" k6-results/reconciliation.json
           tail -n 40 ledger.log > k6-results/ledger-tail.log
           if [ "${{ job.status }}" != "success" ]; then .github/scripts/annotate.sh error "ledger.log tail" k6-results/ledger-tail.log; fi
       - uses: actions/upload-artifact@v4

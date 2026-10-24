@@ -37,6 +37,11 @@ ledger:
       enabled: true
       interval: 200ms
       batch-size: 100
+  reconciliation:
+    enabled: true
+    initial-delay: 10s
+    interval: 30s
+    max-outbox-lag: 60s
 
 management:
   endpoints:
