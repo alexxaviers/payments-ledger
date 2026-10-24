@@ -1,7 +1,14 @@
-# payments-ledger
+# Payments Ledger
 
 [![CI](https://github.com/alexxaviers/payments-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/alexxaviers/payments-ledger/actions/workflows/ci.yml)
 [![Kubernetes](https://github.com/alexxaviers/payments-ledger/actions/workflows/kubernetes.yml/badge.svg)](https://github.com/alexxaviers/payments-ledger/actions/workflows/kubernetes.yml)
+![Java](https://img.shields.io/badge/Java_21-ED8B00?style=flat-square&logo=openjdk&logoColor=white)
+![Spring Boot](https://img.shields.io/badge/Spring_Boot_3-6DB33F?style=flat-square&logo=springboot&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL_16-4169E1?style=flat-square&logo=postgresql&logoColor=white)
+![Kafka](https://img.shields.io/badge/Kafka-231F20?style=flat-square&logo=apachekafka&logoColor=white)
+![Kubernetes](https://img.shields.io/badge/Kubernetes-326CE5?style=flat-square&logo=kubernetes&logoColor=white)
+![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=flat-square&logo=prometheus&logoColor=white)
+![Grafana](https://img.shields.io/badge/Grafana-F46800?style=flat-square&logo=grafana&logoColor=white)
 
 A backend service that moves money between accounts and never gets a balance wrong, even with thousands of
 concurrent requests, retried requests, or servers crashing mid-transfer.
@@ -12,6 +19,8 @@ retried with the same key: **0 lost transfers, 0 duplicates, 0 balance mismatche
 
 **Stack:** Java 21 · Spring Boot 3 · PostgreSQL 16 · Flyway · Kafka (KRaft) · Testcontainers · k6 ·
 Kubernetes (kind) · Prometheus · Grafana · GitHub Actions
+
+<p align="center"><img src="docs/images/grafana-dashboard.png" width="760" alt="Grafana dashboard during a load test: 0 reconciliation mismatches, 0 outbox backlog"></p>
 
 > **New here?** [`docs/walkthrough.md`](docs/walkthrough.md) explains every design decision with links into the
 > code, plus known limitations and answers to common interview questions.
