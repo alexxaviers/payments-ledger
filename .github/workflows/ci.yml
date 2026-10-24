@@ -14,5 +14,67 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - name: Build and test
+      - name: Build and test (Testcontainers + real Postgres)
         run: ./mvnw -B verify
+      - name: Report test results
+        if: always()
+        run: |
+          shopt -s nullglob
+          files=(*/target/surefire-reports/*.txt)
+          [ ${#files[@]} -gt 0 ] || exit 0
+          grep -h "Tests run" "${files[@]}" > test-summary.txt || true
+          .github/scripts/annotate.sh notice "Test results" test-summary.txt
+          grep -h -A 15 -E "FAILURE|ERROR" "${files[@]}" > test-failures.txt || true
+          .github/scripts/annotate.sh error "Test failures" test-failures.txt
+
+  load-test:
+    needs: test
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: ledger
+          POSTGRES_USER: ledger
+          POSTGRES_PASSWORD: ledger
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U ledger -d ledger"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Package
+        run: ./mvnw -B -q -DskipTests package
+      - name: Start ledger-service
+        run: |
+          nohup java -jar ledger-service/target/ledger-service-*.jar > ledger.log 2>&1 &
+          for i in $(seq 1 60); do curl -fs localhost:8080/actuator/health && exit 0; sleep 2; done
+          cat ledger.log; exit 1
+      - uses: grafana/setup-k6-action@v1
+      - name: k6 load test (100 VUs, 60s)
+        run: |
+          mkdir -p k6-results
+          k6 run load-test/transfers.js
+      - name: Verify invariants after load
+        run: curl -fsS localhost:8080/admin/invariants | tee k6-results/invariants.json
+      - name: Write results to job summary
+        if: always()
+        run: |
+          echo "### Load test ($(nproc) vCPU runner, app + Postgres + k6 on the same machine)" >> "$GITHUB_STEP_SUMMARY"
+          python3 load-test/summarize.py k6-results/summary.json k6-results/invariants.json > k6-results/table.md || true
+          cat k6-results/table.md >> "$GITHUB_STEP_SUMMARY"
+          .github/scripts/annotate.sh notice "Load test results ($(nproc) vCPU)" k6-results/table.md
+          tail -n 40 ledger.log > k6-results/ledger-tail.log
+          if [ "${{ job.status }}" != "success" ]; then .github/scripts/annotate.sh error "ledger.log tail" k6-results/ledger-tail.log; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: load-test-results
+          path: |
+            k6-results/
+            ledger.log
