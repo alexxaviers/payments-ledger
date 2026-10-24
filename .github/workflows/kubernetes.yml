@@ -32,3 +32,42 @@ jobs:
           kubectl -n ledger logs statefulset/kafka --tail=30 >> diag.txt 2>&1 || true
           tail -c 3400 diag.txt > diag-tail.txt
           .github/scripts/annotate.sh error "Cluster diagnostics" diag-tail.txt
+
+  failure-experiment:
+    name: Failure injection (crash pods during 10,000 transfers)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - uses: helm/kind-action@v1
+        with:
+          install_only: true
+      - uses: grafana/setup-k6-action@v1
+      - name: kind-up
+        run: ./scripts/kind-up.sh
+      - name: Run the experiment
+        run: ./scripts/failure-experiment.sh
+      - name: Publish results
+        if: always()
+        run: |
+          echo "### Failure experiment ($(nproc) vCPU runner)" >> "$GITHUB_STEP_SUMMARY"
+          cat k6-results/experiment-results.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+          .github/scripts/annotate.sh notice "Failure experiment results" k6-results/experiment-results.md
+          tail -n 25 k6-results/failure-k6.log > k6-tail.txt 2>/dev/null || true
+          if [ "${{ job.status }}" != "success" ]; then
+            .github/scripts/annotate.sh error "k6 output (tail)" k6-tail.txt
+            kubectl -n ledger get pods > pods.txt 2>&1 || true
+            kubectl -n ledger logs -l app=ledger --tail=15 --prefix >> pods.txt 2>&1 || true
+            tail -c 3400 pods.txt > pods-tail.txt
+            .github/scripts/annotate.sh error "Pods" pods-tail.txt
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: failure-experiment-results
+          path: k6-results/
