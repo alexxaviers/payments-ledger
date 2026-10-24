@@ -1,6 +1,12 @@
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+
 spring:
   application:
     name: ledger-service
+  lifecycle:
+    timeout-per-shutdown-phase: 15s
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/ledger}
     username: ${DB_USER:ledger}
@@ -55,3 +61,6 @@ management:
     health:
       probes:
         enabled: true
+      group:
+        readiness:
+          include: readinessState,db

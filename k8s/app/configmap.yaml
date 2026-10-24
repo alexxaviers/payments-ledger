@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ledger-config
+  namespace: ledger
+data:
+  DB_URL: jdbc:postgresql://postgres:5432/ledger
+  DB_POOL_SIZE: "15"
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notifications-config
+  namespace: ledger
+data:
+  DB_URL: jdbc:postgresql://postgres:5432/notifications
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9092

@@ -1,0 +1,16 @@
+# Picked up by the Prometheus that kube-prometheus-stack installs (release label must match).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: payments-ledger
+  namespace: ledger
+  labels:
+    release: monitoring
+spec:
+  selector:
+    matchExpressions:
+      - {key: app, operator: In, values: [ledger, notifications]}
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 5s

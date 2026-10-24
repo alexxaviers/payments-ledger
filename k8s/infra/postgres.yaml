@@ -1,0 +1,84 @@
+# Single-instance Postgres for local clusters. For production use a managed database or an operator
+# (CloudNativePG, Crunchy) or the Bitnami/CloudNativePG Helm charts.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: ledger
+data:
+  init.sql: |
+    CREATE DATABASE notifications OWNER ledger;
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: ledger
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          args: ["-c", "max_connections=200"]
+          ports:
+            - name: pg
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: ledger
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef: {name: ledger-secrets, key: DB_USER}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: ledger-secrets, key: DB_PASSWORD}
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "ledger", "-d", "ledger"]
+            periodSeconds: 2
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: init
+          configMap:
+            name: postgres-init
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: ledger
+spec:
+  selector:
+    app: postgres
+  ports:
+    - name: pg
+      port: 5432
+      targetPort: pg
